@@ -232,7 +232,7 @@ void psm_commit() {
 #endif
 
     /* Flush log data [head .. local_head). */
-    int end = _psm.local_head;
+    size_t end = _psm.local_head;
     for (size_t i = log->head; i != end; i = (i + CACHE_LINE_SIZE_B) % PSM_LOG_SIZE_B) {
         const void *p = log->buf + i;
         assert((uintptr_t)p % CACHE_LINE_SIZE_B == 0 && "p is not cache-line aligned");
