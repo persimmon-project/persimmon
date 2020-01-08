@@ -191,8 +191,7 @@ void *psm_reserve(size_t len) {
     return p;
 }
 
-void psm_push(const void *log_entry, int len) {
-    assert(len >= 0 && "log entry must have non-negative length");
+void psm_push(const void *log_entry, size_t len) {
     assert(memcmp(log_entry, &ZERO, /* n */ 1) != 0 && "log_entry must not start with the zero byte");
     void *start = psm_reserve(len);
     memcpy(start, log_entry, len);

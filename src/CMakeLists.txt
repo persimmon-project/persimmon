@@ -1,4 +1,4 @@
-add_compile_options(-fPIC -Wall -Wextra -Wno-uninitialized -Wno-unused-parameter)
+add_compile_options(-fPIC -Wall -Wextra -Wno-uninitialized -Wno-unused-parameter -Wl,-zdefs)
 
 add_subdirectory(chkpt)
 add_subdirectory(undo)

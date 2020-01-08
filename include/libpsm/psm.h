@@ -1,8 +1,9 @@
-#ifndef PSM_PSM_H
-#define PSM_PSM_H
+#ifndef LIBPSM_PSM_H
+#define LIBPSM_PSM_H
 
 #include <setjmp.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -61,8 +62,8 @@ typedef struct psm_sgarray {
 /* FIXME(zhangwen): this naming is horrible. */
 
 /* WARNING: the log entry must not start with a NUL byte. */
-[[gnu::visibility("default")]] void *psm_reserve(int len);
-[[gnu::visibility("default")]] void psm_push(const void *log_entry, int len);
+[[gnu::visibility("default")]] void *psm_reserve(size_t len);
+[[gnu::visibility("default")]] void psm_push(const void *log_entry, size_t len);
 [[gnu::visibility("default")]] void psm_push_sga(const psm_sgarray_t *sga);
 [[gnu::visibility("default")]] void psm_commit();
 
