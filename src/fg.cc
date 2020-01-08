@@ -66,9 +66,9 @@ int psm_init(const psm_config_t *config) {
 
     _psm.log = new (mem) psm_log;
     _psm.mode = config->mode;
-    _psm.local_head = 0;
+    _psm.local_head = _psm.local_tail = 0;
 
-    if (config->consume_func) {
+    if (config->consume_func == nullptr) {
         return EINVAL;
     }
     _psm.consume_func = config->consume_func;
@@ -89,6 +89,7 @@ int psm_init(const psm_config_t *config) {
                 return errno;
             }
             _psm.local_head = _psm.log->head;
+            _psm.local_tail = _psm.log->tail;
         }
         break;
     case PSM_MODE_CHKPT:
@@ -160,7 +161,7 @@ void *psm_reserve(size_t len) {
     assert(len <= PSM_LOG_SIZE_B - 1 && "log entry length exceeds log length");
 
     psm_log *log = _psm.log;
-    int local_head = _psm.local_head;
+    size_t local_head = _psm.local_head;
     bool truncated_tail = false;
     if (local_head + len > PSM_LOG_SIZE_B) { // FIXME(zhangwen): do this properly.
         // The consecutive space after `local_head` is not enough.
@@ -169,13 +170,13 @@ void *psm_reserve(size_t len) {
         len += PSM_LOG_SIZE_B - local_head;
     }
 
-    size_t tail, available;
-    do { // Spin until there's enough free space starting from local_head.
-        // FIXME(zhangwen): commit if there's not enough space in [local_head,
-        // head).
-        tail = log->tail.load(std::memory_order_acquire);
-        available = (tail + PSM_LOG_SIZE_B - local_head - 1) % PSM_LOG_SIZE_B;
-    } while (available < len);
+    // Spin until there's enough free space starting from `local_head`.
+    // FIXME(zhangwen): commit if there's not enough space in [local_head, head).
+    size_t local_tail = _psm.local_tail;
+    for (; (local_tail + PSM_LOG_SIZE_B - local_head - 1) % PSM_LOG_SIZE_B < len;
+         local_tail = log->tail.load(std::memory_order_acquire))
+        ;
+    _psm.local_tail = local_tail;
 
     void *p = log->buf + local_head;
     assert((uintptr_t)p % CACHE_LINE_SIZE_B == 0 && "BUG: head pointer is not aligned");
