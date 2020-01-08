@@ -1,0 +1,14 @@
+{
+    global:
+        psm_init;
+        psm_reserve;
+        psm_push;
+        psm_push_sga;
+        psm_commit;
+
+        # DynamoRIO needs these.
+        dr_client_main;
+        _USES_DR_VERSION_;
+        _DR_CLIENT_AVX512_CODE_IN_USE_;
+    local: *;         # hide everything else
+};

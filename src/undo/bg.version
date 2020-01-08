@@ -1,0 +1,14 @@
+{
+    global:
+        dr_client_main;
+        _USES_DR_VERSION_;
+        _DR_CLIENT_AVX512_CODE_IN_USE_;
+
+        instrument_args;
+        extern "C++" {
+            "instrument_init(void*, void*)";
+            "instrument_commit(int)";
+            "instrument_cleanup()";
+        };
+    local: *;         # hide everything else
+};
