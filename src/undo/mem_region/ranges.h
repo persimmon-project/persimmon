@@ -62,7 +62,7 @@ template <typename T> class ranges {
         return false;
     }
 
-    bool find(T start, size_t size) const {
+    [[nodiscard]] bool find(T start, size_t size) const {
         if (size == 0) {
             return true;
         }
@@ -131,18 +131,20 @@ template <typename T> class ranges {
             return (start < other.start) || (start == other.start && size < other.size);
         }
 
-        bool includes(T point) const { return start <= point && point - start < size; }
+        [[nodiscard]] bool includes(T point) const { return start <= point && point - start < size; }
 
-        bool includes(const range &other) const {
+        [[nodiscard]] bool includes(const range &other) const {
             return other.size == 0 || (start <= other.start && other.start - start + other.size <= size);
         }
 
-        bool intersects(const range &other) const { return includes(other.start) || other.includes(start); }
+        [[nodiscard]] bool intersects(const range &other) const {
+            return includes(other.start) || other.includes(start);
+        }
     };
 
     drvector_t v; // Sorted, coalesced.
 
-    static range *new_range(const range &r) { return new (dr_global_alloc(sizeof(range))) range(r); }
+    [[nodiscard]] static range *new_range(const range &r) { return new (dr_global_alloc(sizeof(range))) range(r); }
 
     static void free_range(void *r) { dr_global_free(r, sizeof(range)); }
 };

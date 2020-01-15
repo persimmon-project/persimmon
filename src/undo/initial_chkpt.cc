@@ -19,9 +19,9 @@ const char *IMG_DIR_NAME = "initial_chkpt";
 
 #define MUST_SUCCEED(x)                                                                                               \
     do {                                                                                                              \
-        int ret = (x);                                                                                                \
-        if (ret < 0)                                                                                                  \
-            return -ret;                                                                                              \
+        int _ret = (x);                                                                                               \
+        if (_ret < 0)                                                                                                 \
+            return -_ret;                                                                                             \
     } while (0)
 
 int take_initial_chkpt(jmp_buf recovery_point) {
@@ -45,32 +45,25 @@ int take_initial_chkpt(jmp_buf recovery_point) {
     int dirfd;
     MUST_SUCCEED(dirfd = my_open(instrument_args.pmem_path, O_DIRECTORY));
 
-    { // Initialize criu.
-        int res;
-        if ((res = criu_init_opts()) != 0) {
-            return res;
-        }
-
-        if ((res = criu_set_service_address(instrument_args.criu_service_path)) != 0) {
-            return res;
-        }
-
-        criu_set_work_dir_fd(dirfd);
-        criu_set_log_file("dump.log");
-        criu_set_log_level(4);
-        criu_set_leave_running(true);
+    // Initialize criu.
+    if (int res = criu_init_opts(); res != 0) {
+        return res;
     }
+    if (int res = criu_set_service_address(instrument_args.criu_service_path); res != 0) {
+        return res;
+    }
+    criu_set_work_dir_fd(dirfd);
+    criu_set_log_file("dump.log");
+    criu_set_log_level(4);
+    criu_set_leave_running(true);
 
     // Create and set directory for initial checkpoint.
-    int imgs_dirfd;
-    {
-        int ret = my_mkdirat(dirfd, IMG_DIR_NAME, 0666);
-        if (ret < 0 && ret != -EEXIST) {
-            return -ret;
-        }
+    if (int ret = my_mkdirat(dirfd, IMG_DIR_NAME, 0666); ret < 0 && ret != -EEXIST) {
+        return -ret;
     }
     // In the case of `EEXIST`, it's possible that the file exists but is not a directory,
     // in which case the following `open` would fail due to the `O_DIRECTORY` flag.
+    int imgs_dirfd;
     MUST_SUCCEED(imgs_dirfd = my_openat(dirfd, IMG_DIR_NAME, O_DIRECTORY));
     criu_set_images_dir_fd(imgs_dirfd);
 

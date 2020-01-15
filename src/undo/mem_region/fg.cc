@@ -19,8 +19,7 @@ int map_recovered_regions(const char *pmem_path, int pipe_fd) {
     while (true) {
         region r(nullptr, 0);
 
-        int nread = my_read(pipe_fd, &r, sizeof(r));
-        if (nread < 0 || (size_t)nread < sizeof(r)) {
+        if (int nread = my_read(pipe_fd, &r, sizeof(r)); nread < 0 || static_cast<size_t>(nread) < sizeof(r)) {
             return EINVAL;
         }
 
@@ -49,8 +48,7 @@ int map_recovered_regions(const char *pmem_path, int pipe_fd) {
             return EAGAIN;
         }
 
-        int ret = my_close(fd);
-        if (ret != 0) {
+        if (int ret = my_close(fd); ret != 0) {
             return -ret;
         }
 
@@ -59,8 +57,7 @@ int map_recovered_regions(const char *pmem_path, int pipe_fd) {
 #endif
     }
 
-    int ret = my_close(pmem_dirfd);
-    if (ret != 0) {
+    if (int ret = my_close(pmem_dirfd); ret != 0) {
         return -ret;
     }
     return 0;

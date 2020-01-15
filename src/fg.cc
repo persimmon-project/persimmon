@@ -26,8 +26,8 @@ static constexpr char ZERO = '\0';
 static psm_t _psm;
 
 psm_log::psm_log() : head(0), tail(0), buf{} {
-    pmem_flush_cache_line(&head);
-    pmem_flush_cache_line(&tail);
+    pmem_flush(&head);
+    pmem_flush(&tail);
     pmem_drain();
 }
 
@@ -176,6 +176,9 @@ void *psm_reserve(size_t len) {
     for (; (local_tail + PSM_LOG_SIZE_B - local_head - 1) % PSM_LOG_SIZE_B < len;
          local_tail = log->tail.load(std::memory_order_acquire))
         ;
+    // FIXME(zhangwen): this might be slow.
+    pmem_flush(&log->tail);
+    pmem_drain();
     _psm.local_tail = local_tail;
 
     void *p = log->buf + local_head;
@@ -184,7 +187,7 @@ void *psm_reserve(size_t len) {
         // Write a zero byte at `local_head` to signal that the space between here and
         // the end of the log is not used.
         memset(p, 0, /* n */ 1);
-        pmem_flush_cache_line(p);
+        pmem_flush_invalidate(p);
         p = log->buf; // Start from the front.
     }
 
@@ -192,36 +195,13 @@ void *psm_reserve(size_t len) {
     return p;
 }
 
-void psm_push(const void *log_entry, size_t len) {
-    assert(memcmp(log_entry, &ZERO, /* n */ 1) != 0 && "log_entry must not start with the zero byte");
-    void *start = psm_reserve(len);
-    memcpy(start, log_entry, len);
+void psm_push(const void *_src, size_t len) {
+    auto src = static_cast<const char *>(_src);
+    auto dest = static_cast<char *>(psm_reserve(len));
+    pmem_memcpy_nodrain(dest, src, len);
 }
 
-void psm_push_sga(const psm_sgarray_t *sga) {
-    assert(sga->num_segs > 0 && "sga must have at least one segment");
-
-    static_assert(sizeof(sga->num_segs) == 1, "sga->num_segs must be one byte");
-    size_t total_len = sizeof(sga->num_segs) + sga->num_segs * sizeof(sga->segs[0].len);
-    for (int i = 0; i < sga->num_segs; i++) {
-        total_len += sga->segs[i].len;
-    }
-    void *start = psm_reserve(total_len);
-
-    char *p = (char *)start;
-    memcpy(p, &sga->num_segs, sizeof(sga->num_segs));
-    p += sizeof(sga->num_segs);
-    for (int i = 0; i < sga->num_segs; i++) {
-        auto len = sga->segs[i].len;
-        memcpy(p, &len, sizeof(len));
-        p += sizeof(len);
-        memcpy(p, sga->segs[i].buf, len);
-        p += len;
-    }
-    assert(p == (char *)start + total_len);
-}
-
-void psm_commit() {
+void psm_commit(bool push_only) {
     psm_log *log = _psm.log;
     if (log->head == _psm.local_head)
         return;
@@ -231,17 +211,19 @@ void psm_commit() {
             log->tail.load());
 #endif
 
-    /* Flush log data [head .. local_head). */
-    size_t end = _psm.local_head;
-    for (size_t i = log->head; i != end; i = (i + CACHE_LINE_SIZE_B) % PSM_LOG_SIZE_B) {
-        const void *p = log->buf + i;
-        assert((uintptr_t)p % CACHE_LINE_SIZE_B == 0 && "p is not cache-line aligned");
-        pmem_flush_cache_line(p);
+    if (!push_only) {
+        /* Flush log data [head .. local_head). */
+        size_t end = _psm.local_head;
+        for (size_t i = log->head; i != end; i = (i + CACHE_LINE_SIZE_B) % PSM_LOG_SIZE_B) {
+            const void *p = log->buf + i;
+            assert((uintptr_t)p % CACHE_LINE_SIZE_B == 0 && "p is not cache-line aligned");
+            pmem_flush(p);
+        }
     }
     pmem_drain();
 
     /* Update and persist head. */
     log->head.store(_psm.local_head, std::memory_order_release);
-    pmem_flush_cache_line(&log->head);
+    pmem_flush(&log->head);
     pmem_drain();
 }

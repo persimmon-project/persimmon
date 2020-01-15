@@ -19,8 +19,7 @@ constexpr int COMMIT_BATCH = 1;
 // FIXME(zhangwen): pick this number less arbitrarily?
 constexpr int IDLE_SPIN = 10;
 
-template <typename F>
-[[gnu::warn_unused_result]] static int _bg_consume(psm_t *psm, F f, int tail) {
+template <typename F>[[nodiscard]] static int _bg_consume(psm_t *psm, F f, int tail) {
     assert_not_instrumented();
     assert(nullptr != psm);
 
@@ -38,7 +37,7 @@ template <typename F>
     }
 #endif
 
-    struct psm_log * const log = psm->log;
+    struct psm_log *const log = psm->log;
 
     int consumed = 0;
     while ((psm->mode == PSM_MODE_UNDO && !instrument_args.should_commit) ||
@@ -47,6 +46,9 @@ template <typename F>
         uint64_t spin = 0;
         do {
             head = log->head.load(std::memory_order_acquire);
+            // FIXME(zhangwen): this might be slow.
+            pmem_flush(&log->head);
+            pmem_drain();
             new_tail = consume(psm, f, head, tail);
             ++spin;
         } while (new_tail == -1 && (spin < IDLE_SPIN || consumed == 0));
@@ -57,9 +59,7 @@ template <typename F>
 
 #if PSM_LOGGING
         if (psm->mode == PSM_MODE_UNDO) {
-            instrument_log(
-                "[bg: _bg_consume] PSM consume\ttail = %d\thead = %d\n", tail,
-                head);
+            instrument_log("[bg: _bg_consume] PSM consume\ttail = %d\thead = %d\n", tail, head);
         }
 #endif
         ++consumed;
@@ -69,26 +69,24 @@ template <typename F>
 
 #if PSM_LOGGING
     if (psm->mode == PSM_MODE_UNDO) {
-        instrument_log(
-            "[bg: _bg_consume] PSM commit\t%d command(s) consumed\n",
-            consumed);
+        instrument_log("[bg: _bg_consume] PSM commit\t%d command(s) consumed\n", consumed);
     }
 #endif
     switch (psm->mode) {
-        case PSM_MODE_NO_PERSIST:
-            break;
-        case PSM_MODE_UNDO:
-            instrument_commit(tail);
-            break;
-        case PSM_MODE_CHKPT:
-            chkpt_commit(psm->state.chkpt);
-            break;
-        default:
-            __builtin_unreachable();
+    case PSM_MODE_NO_PERSIST:
+        break;
+    case PSM_MODE_UNDO:
+        instrument_commit(tail);
+        break;
+    case PSM_MODE_CHKPT:
+        chkpt_commit(psm->state.chkpt);
+        break;
+    default:
+        __builtin_unreachable();
     }
 
     log->tail.store(tail, std::memory_order_release); // TODO(zhangwen): is this right?
-    pmem_flush_cache_line(&log->tail);
+    pmem_flush(&log->tail);
 
     // FIXME(zhangwen): have some API for implementation strategies.
     if (psm->mode == PSM_MODE_UNDO) {
@@ -102,8 +100,7 @@ template <typename F>
     return tail;
 }
 
-template <typename F>
-[[noreturn]] static void run_consumer(psm_t *psm, F consume_func) {
+template <typename F>[[noreturn]] static void run_consumer(psm_t *psm, F consume_func) {
     assert_not_instrumented();
 
     int tail = psm->log->tail;
@@ -115,28 +112,28 @@ template <typename F>
 [[gnu::visibility("default")]] void bg_run(psm_t *psm, bool use_sga) {
     int res = -1;
     switch (psm->mode) {
-        case PSM_MODE_NO_PERSIST:
-            res = 0;
+    case PSM_MODE_NO_PERSIST:
+        res = 0;
+        break;
+    case PSM_MODE_UNDO:
+        instrument_args.recovered_tail = psm->log->tail.load();
+        instrument_args.should_commit = false;
+        res = instrument_init();
+        if (!instrument_args.recovered) {
             break;
-        case PSM_MODE_UNDO:
-            instrument_args.recovered_tail = psm->log->tail.load();
-            instrument_args.should_commit = false;
-            res = instrument_init();
-            if (!instrument_args.recovered) {
-                break;
-            }
+        }
 
-            if (instrument_args.recovered_tail != -1) { // Set by `dr_client_main`.
-                psm->log->tail.store(instrument_args.recovered_tail, std::memory_order_release);
-                pmem_flush_cache_line(&psm->log->tail);
-                pmem_drain();
-            }
-            break;
-        case PSM_MODE_CHKPT:
-            res = chkpt_init(psm->state.chkpt);
-            break;
-        default:
-            __builtin_unreachable();
+        if (instrument_args.recovered_tail != -1) { // Set by `dr_client_main`.
+            psm->log->tail.store(instrument_args.recovered_tail, std::memory_order_release);
+            pmem_flush(&psm->log->tail);
+            pmem_drain();
+        }
+        break;
+    case PSM_MODE_CHKPT:
+        res = chkpt_init(psm->state.chkpt);
+        break;
+    default:
+        __builtin_unreachable();
     }
     if (res != 0) {
         abort();
@@ -165,5 +162,3 @@ template <typename F>
     }
     __builtin_unreachable();
 }
-
-

@@ -9,11 +9,11 @@
 
 #include "dr_api.h"
 
-#include "undo_bg.h"
 #include "flush.h"
 #include "mem_region/mem_region.h"
 #include "mem_region/ranges.h"
 #include "my_libc/my_libc.h"
+#include "undo_bg.h"
 
 // Singleton undo log.
 namespace ul {
@@ -199,7 +199,7 @@ static void undo_log_init(const char *pmem_path, bool recovered) {
         entry->addr = p;
         barrier();
         entry->commit_tail = 0;
-        pmem_flush_cache_line(entry);
+        pmem_flush(entry);
         // We don't care about the order in which these log entries get
         // persisted, as long as they all get persisted by the end of this
         // function.
@@ -240,16 +240,16 @@ static void undo_log_commit(int tail) {
     static_assert(CACHE_LINE_SIZE_B % UNDO_BLK_SIZE_B == 0, "undo-logged block straddles cache line");
 
     for (size_t i = 0; i < undo_log.len; i++) {
-        pmem_flush_cache_line(undo_log.log[i].addr);
+        pmem_flush(undo_log.log[i].addr);
     }
     undo_log.fresh_regions->foreach ([](uintptr_t addr_n, size_t size) {
         auto addr = reinterpret_cast<app_pc>(addr_n);
-        pmem_flush_cache_line(addr);
+        pmem_flush(addr);
         uintptr_t blk_start = addr_n & ~(CACHE_LINE_SIZE_B - 1);
 
         for (auto p = reinterpret_cast<app_pc>(blk_start) + CACHE_LINE_SIZE_B; p < addr + size;
              p += CACHE_LINE_SIZE_B) {
-            pmem_flush_cache_line(p);
+            pmem_flush(p);
         }
     });
     pmem_drain();
@@ -258,7 +258,7 @@ static void undo_log_commit(int tail) {
     undo_log_entry *entry = &undo_log.log[undo_log.len];
     entry->addr = nullptr;
     entry->commit_tail = tail + 1;
-    pmem_flush_cache_line(entry);
+    pmem_flush(entry);
     undo_log.len++;
     DR_ASSERT(undo_log.len < UNDO_NUM_ENTRIES);
     pmem_drain();
@@ -294,7 +294,7 @@ static void undo_log_exit() {
 // records should have been persisted.
 // Returns the commit tail, or -1 if one doesn't exist. If one exists, it should
 // be used as the PSM log tail.
-[[gnu::warn_unused_result]] static int undo_log_apply(mem_region_manager *mrm) {
+[[nodiscard]] static int undo_log_apply(mem_region_manager *mrm) {
 #if INSTRUMENT_LOGGING
     dr_fprintf(STDERR, "[bg: apply_undo_log] applying undo log...\n");
 #endif
@@ -314,7 +314,7 @@ static void undo_log_exit() {
         DR_ASSERT_MSG(mrm->does_manage(addr), "undo log entry addr not in a managed region?");
 
         memcpy(entry->addr, &entry->blk, UNDO_BLK_SIZE_B);
-        pmem_flush_cache_line(entry->addr);
+        pmem_flush(entry->addr);
 #if INSTRUMENT_LOGGING
         dr_fprintf(STDERR, "[bg: apply_undo_log] applied undo log entry: %p\n", addr);
 #endif

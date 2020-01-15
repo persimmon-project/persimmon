@@ -43,8 +43,7 @@ struct psm {
 
 // Returns new tail (if an entry is consumed), or -1 if there's no entry to consume.
 template <typename F>
-[[gnu::always_inline, gnu::warn_unused_result]] static inline size_t consume(psm_t *psm, F f, size_t head,
-                                                                             size_t tail) {
+[[gnu::always_inline, nodiscard]] static inline size_t consume(psm_t *psm, F f, size_t head, size_t tail) {
     static const char ZERO = '\0';
 
     if (tail == head) {

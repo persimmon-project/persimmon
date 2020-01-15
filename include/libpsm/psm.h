@@ -57,15 +57,14 @@ typedef struct psm_sgarray {
     psm_sgaseg_t segs[PSM_SGARRAY_MAXSIZE];
 } psm_sgarray_t;
 
-[[gnu::visibility("default")]] int psm_init(const psm_config_t *config);
+int __attribute__((visibility("default"))) psm_init(const psm_config_t *config);
 
 /* FIXME(zhangwen): this naming is horrible. */
 
 /* WARNING: the log entry must not start with a NUL byte. */
-[[gnu::visibility("default")]] void *psm_reserve(size_t len);
-[[gnu::visibility("default")]] void psm_push(const void *log_entry, size_t len);
-[[gnu::visibility("default")]] void psm_push_sga(const psm_sgarray_t *sga);
-[[gnu::visibility("default")]] void psm_commit();
+void __attribute__((visibility("default"))) * psm_reserve(size_t len);
+void __attribute__((visibility("default"))) psm_push(const void *log_entry, size_t len);
+void __attribute__((visibility("default"))) psm_commit(bool push_only);
 
 #ifdef __cplusplus
 }

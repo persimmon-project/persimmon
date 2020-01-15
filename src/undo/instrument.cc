@@ -13,8 +13,8 @@
 #include "drvector.h"
 #include "drwrap.h"
 
-#include "undo_bg.h"
 #include "mem_region/mem_region.h"
+#include "undo_bg.h"
 
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
@@ -24,6 +24,7 @@
 #define MOCK_OUT_RECORD_WRITE 0
 
 #include "undo_log.h"
+
 #include "my_libc/my_libc.h"
 
 constexpr auto POINTER_MAX = std::numeric_limits<uintptr_t>::max();
@@ -108,15 +109,14 @@ DR_EXPORT void instrument_log(const char *fmt, ...) {
 
 DR_EXPORT int instrument_init() {
     if (!instrument_args.recovered) {
-        int res = take_initial_chkpt(instrument_args.recovery_point);
-        if (res != 0) {
+        if (int res = take_initial_chkpt(instrument_args.recovery_point); res != 0) {
             return res;
         }
     }
 
-    int res;
-    if ((res = dr_app_setup()) != 0)
+    if (int res = dr_app_setup(); res != 0) {
         return res;
+    }
     dr_app_start();
 
     return 0;
@@ -136,7 +136,6 @@ DR_EXPORT void instrument_commit(int tail) {
 }
 
 // Called through `drwrap_replace_native`.
-// TODO(zhangwen): is this efficient?!
 DR_EXPORT void instrument_cleanup() {
 #if !MOCK_OUT_RECORD_WRITE
     assert_not_instrumented();
@@ -174,8 +173,9 @@ static void insert_instrumentation(void *drcontext, instrlist_t *bb, instr_t *in
     }
     /* The `drutil_insert_get_mem_addr` call must come before
      * `drreg_reserve_aflags`, which can clobber %eax. */
-    bool ok = drutil_insert_get_mem_addr(drcontext, bb, instr, opnd, reg_dst, reg_t1);
-    DR_ASSERT_MSG(ok, "failed to insert get mem addr");
+    if (bool ok = drutil_insert_get_mem_addr(drcontext, bb, instr, opnd, reg_dst, reg_t1); !ok) {
+        DR_ASSERT_MSG(false, "failed to insert get mem addr");
+    }
     if (drreg_reserve_aflags(drcontext, bb, instr) != DRREG_SUCCESS) {
         DR_ASSERT_MSG(false, "failed to reserve aflags");
     }
@@ -251,8 +251,9 @@ static void insert_instrumentation(void *drcontext, instrlist_t *bb, instr_t *in
 static dr_emit_flags_t event_app_instruction(void *drcontext, void *tag, instrlist_t *bb, instr_t *instr,
                                              bool for_trace, bool translating, void *user_data) {
     // Start by ignoring instructions that are not subject to instrumentation.
-    if (!instr_is_app(instr))
+    if (!instr_is_app(instr)) {
         return DR_EMIT_DEFAULT;
+    }
 
     app_pc pc = instr_get_app_pc(instr);
     if (dr_module_contains_addr(psm_module, pc)) {

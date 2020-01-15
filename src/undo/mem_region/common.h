@@ -13,22 +13,26 @@ struct region {
     char *base;
     size_t size;
 
-    char *end() const { return base + size; }
+    [[nodiscard]] char *end() const { return base + size; }
 
     region(void *_base, size_t _size) : base(reinterpret_cast<char *>(_base)), size(_size) {}
 
-    bool does_include(void *_addr) const {
+    [[nodiscard]] bool does_include(void *_addr) const {
         char *addr = reinterpret_cast<char *>(_addr);
         return base <= addr && addr < end();
     }
 
-    bool does_include(const region &other) const { return does_include(other.base) && does_include(other.end() - 1); }
+    [[nodiscard]] bool does_include(const region &other) const {
+        return does_include(other.base) && does_include(other.end() - 1);
+    }
 
-    bool does_include(const region *other) const {
+    [[nodiscard]] bool does_include(const region *other) const {
         return does_include(other->base) && does_include(other->end() - 1);
     }
 
-    bool does_overlap_with(const region &other) const { return does_include(other.base) || other.does_include(base); }
+    [[nodiscard]] bool does_overlap_with(const region &other) const {
+        return does_include(other.base) || other.does_include(base);
+    }
 };
 
 // Format: mem_%lx

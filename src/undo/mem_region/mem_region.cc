@@ -2,10 +2,9 @@
 #include <cstring> // Only use string functions that don't do weird things (like memory allocations).
 #include <new>
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
 #include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
 #include "dr_api.h"
 #include "dr_tools.h"
@@ -13,6 +12,7 @@
 
 #include "mem_region.h"
 #include "common.h"
+
 #include "../my_libc/my_libc.h"
 #include "dir_iter.h"
 
@@ -42,15 +42,12 @@ void mem_region_manager::recover() {
     // Gather names of files to delete here, to avoid deleting them while
     // iterating.
     drvector_t files_to_delete;
-    bool success = drvector_init(&files_to_delete, /* initial capacity */ 0,
-                                 false, nullptr);
+    bool success = drvector_init(&files_to_delete, /* initial capacity */ 0, false, nullptr);
     DR_ASSERT(success);
 
-    iterate_dir(pmem_path, [this, &files_to_delete](
-        int dirfd, const char *file_name) -> int {
+    iterate_dir(pmem_path, [this, &files_to_delete](int dirfd, const char *file_name) -> int {
         uintptr_t n_base;
-        int n =
-            dr_sscanf(file_name, FILE_NAME_FORMAT, &n_base);
+        int n = dr_sscanf(file_name, FILE_NAME_FORMAT, &n_base);
         DR_ASSERT_MSG(n >= 0, "dr_sscanf failed");
         if (n < 1) { // Not a file we're interested in.
             return 0;
@@ -67,39 +64,34 @@ void mem_region_manager::recover() {
         off_t size = st.st_size;
 
         region new_r(base, size);
-        int i = find_overlap(new_r);
-        if (i != -1) {
+        if (int i = find_overlap(new_r); i != -1) {
             // If an overlapping region exists, one must include the
             // other. We keep the larger region (see comments in
             // `remove_region`).
             auto existing_r = static_cast<const region *>(regions.array[i]);
             if (existing_r->does_include(new_r)) {
 #if MEM_REGION_LOGGING
-                dr_fprintf(STDERR, "region file deleted:\t\t%lx-%lx\n", base,
-                           base + size);
+                dr_fprintf(STDERR, "region file deleted:\t\t%lx-%lx\n", base, base + size);
 #endif
                 drvector_append(&files_to_delete, dr_global_strdup(file_name));
                 return 0;
             }
 
-            DR_ASSERT_MSG(new_r.does_include(existing_r),
-                          "regions overlap but neither includes the other");
+            DR_ASSERT_MSG(new_r.does_include(existing_r), "regions overlap but neither includes the other");
             // We will map the new region in favor of the existing
             // one. Mark the existing region for deletion.
             char existing_file_name[FILE_NAME_BUF_LEN];
             make_file_name(existing_file_name, existing_r->base);
-            drvector_append(&files_to_delete,
-                            dr_global_strdup(existing_file_name));
+            drvector_append(&files_to_delete, dr_global_strdup(existing_file_name));
 #if MEM_REGION_LOGGING
-            dr_fprintf(STDERR, "region file deleted:\t\t%lx-%lx\n",
-                       existing_r->base, existing_r->base + existing_r->size);
+            dr_fprintf(STDERR, "region file deleted:\t\t%lx-%lx\n", existing_r->base,
+                       existing_r->base + existing_r->size);
 #endif
         }
 
         {
-            void *ret = my_mmap(base, size, PROT_READ | PROT_WRITE,
-                                MAP_FIXED | MAP_SHARED_VALIDATE | MAP_SYNC, fd,
-                /* offset */ 0);
+            void *ret = my_mmap(base, size, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED_VALIDATE | MAP_SYNC, fd,
+                                /* offset */ 0);
             DR_ASSERT_MSG(ret != MAP_FAILED, "mmap memory region file failed");
             DR_ASSERT_MSG(ret == base, "mmap returned a different address?");
         }
@@ -113,7 +105,7 @@ void mem_region_manager::recover() {
 
         {
             void *mem = dr_global_alloc(sizeof(region));
-            drvector_append(&regions, new(mem) region(base, size));
+            drvector_append(&regions, new (mem) region(base, size));
             rs.insert(reinterpret_cast<uintptr_t>(base), size);
         }
         return 0;
@@ -152,13 +144,9 @@ void mem_region_manager::send_regions(int fd) const {
     DR_ASSERT_MSG(written == sizeof(sentinel), "send_regions: written less than asked");
 }
 
-bool
-mem_region_manager::does_manage(app_pc addr) const {
-    return rs.find(reinterpret_cast<uintptr_t>(addr));
-}
+bool mem_region_manager::does_manage(app_pc addr) const { return rs.find(reinterpret_cast<uintptr_t>(addr)); }
 
-int
-mem_region_manager::find_overlap(const region &other) const {
+int mem_region_manager::find_overlap(const region &other) const {
     for (uint i = 0; i < regions.entries; i++) {
         const auto *r = static_cast<const region *>(regions.array[i]);
         if (r->does_overlap_with(other)) {
@@ -175,63 +163,51 @@ static void print_error(const char *description, int err) {
 
 // Writes a memory region to the persistent memory file system.
 // Returns an open file descriptor to the file (RDWR), or -1 on error.
-int
-mem_region_manager::persist_region(app_pc base, size_t size) const {
+int mem_region_manager::persist_region(app_pc base, size_t size) const {
     int fd = my_openat(pmem_dirfd, TEMP_FILE_NAME, O_CREAT | O_RDWR, 0666);
     if (fd < 0) {
         print_error("persist_region -- openat", -fd);
         goto err;
     }
 
-    // FIXME(zhangwen): is the file size guaranteed to equal `size`?
-    {
-        int nb = my_write(fd, base, size);
-        if (nb < 0) {
-            print_error("persist_region -- write", -nb);
-            goto err;
-        }
+    if (int nb = my_write(fd, base, size); nb < 0) {
+        print_error("persist_region -- write", -nb);
+        goto err;
+    } else if (static_cast<size_t>(nb) != size) {
         // I'm too lazy to deal with the case where 0 <= nb < size.
-        DR_ASSERT(static_cast<size_t>(nb) == size);
+        DR_ASSERT_MSG(false, "persist_region: write is not complete");
     }
 
-    {
-        int ret = my_fsync(fd) < 0;
-        if (ret < 0) {
-            print_error("persist_region -- fsync(fd)", -ret);
-            goto err;
-        }
+    if (int ret = my_fsync(fd) < 0; ret < 0) {
+        print_error("persist_region -- fsync(fd)", -ret);
+        goto err;
     }
 
     // Now, atomically rename the file to a name identifying the base address.
     {
         char file_name[FILE_NAME_BUF_LEN];
         make_file_name(file_name, base);
-        int ret = my_renameat(pmem_dirfd, TEMP_FILE_NAME, pmem_dirfd, file_name);
-        if (ret < 0) {
+        if (int ret = my_renameat(pmem_dirfd, TEMP_FILE_NAME, pmem_dirfd, file_name); ret < 0) {
             print_error("persist_region -- renameat", -ret);
             goto err;
         }
     }
 
-    {
-        int ret = my_fsync(pmem_dirfd);
-        if (ret < 0) {
-            print_error("persist_region -- fsync(pmem_dirfd)", -ret);
-            goto err;
-        }
+    if (int ret = my_fsync(pmem_dirfd); ret < 0) {
+        print_error("persist_region -- fsync(pmem_dirfd)", -ret);
+        goto err;
     }
 
     return fd;
 
-    err:
+err:
     if (fd >= 0) {
         my_close(fd);
     }
     return -1;
 }
 
-result
-mem_region_manager::replace_region(app_pc base, size_t size, int prot) {
+result mem_region_manager::replace_region(app_pc base, size_t size, int prot) {
     region replace_r(base, size);
     DR_ASSERT(-1 == find_overlap(replace_r));
 
@@ -242,9 +218,8 @@ mem_region_manager::replace_region(app_pc base, size_t size, int prot) {
 
     // Replace the memory region.  I hope DynamoRIO is fine with me doing this.
     {
-        void *ret = my_mmap(base, size, prot,
-                            MAP_FIXED | MAP_SHARED_VALIDATE | MAP_SYNC, fd,
-            /* offset */ 0);
+        void *ret = my_mmap(base, size, prot, MAP_FIXED | MAP_SHARED_VALIDATE | MAP_SYNC, fd,
+                            /* offset */ 0);
         if (ret != base) {
             auto ret_n = reinterpret_cast<size_t>(ret);
             DR_ASSERT(ret_n > -4096UL);
@@ -253,12 +228,9 @@ mem_region_manager::replace_region(app_pc base, size_t size, int prot) {
         }
     }
 
-    {
-        int ret = my_close(fd);
-        if (ret < 0) {
-            print_error("replace_region -- close", ret);
-            return result::ERROR;
-        }
+    if (int ret = my_close(fd); ret < 0) {
+        print_error("replace_region -- close", ret);
+        return result::ERROR;
     }
 
 #if MEM_REGION_LOGGING
@@ -267,13 +239,12 @@ mem_region_manager::replace_region(app_pc base, size_t size, int prot) {
 #endif
 
     void *new_r = dr_global_alloc(sizeof(region));
-    drvector_append(&regions, new(new_r) region(base, size));
+    drvector_append(&regions, new (new_r) region(base, size));
     rs.insert(reinterpret_cast<uintptr_t>(base), size);
     return result::SUCCESS;
 }
 
-result
-mem_region_manager::remove_region(app_pc base, size_t size) {
+result mem_region_manager::remove_region(app_pc base, size_t size) {
     region remove_r(base, size);
     int i = find_overlap(remove_r);
     if (i == -1) { // Not managed.  Ignore!
@@ -328,7 +299,7 @@ mem_region_manager::remove_region(app_pc base, size_t size) {
 
         // Add back a region for this truncated entry.
         void *new_r = dr_global_alloc(sizeof(region));
-        drvector_append(&regions, new(new_r) region(r->base, new_size));
+        drvector_append(&regions, new (new_r) region(r->base, new_size));
         rs.insert(reinterpret_cast<uintptr_t>(r->base), new_size);
     } else {
         // The useful parts of the original region file (possibly the tail) has been duplicated.

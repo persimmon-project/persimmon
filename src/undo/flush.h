@@ -16,7 +16,11 @@
 const uintptr_t FLUSH_ALIGN = 64;
 
 // Flushes the cache line that contains addr.
-[[gnu::always_inline]] void inline pmem_flush_cache_line(const void *addr) { _mm_clwb(const_cast<void *>(addr)); }
+[[gnu::always_inline]] void inline pmem_flush(const void *addr) { _mm_clwb(const_cast<void *>(addr)); }
+// Flushes and invalidates the cache line that contains addr.
+[[gnu::always_inline]] void inline pmem_flush_invalidate(const void *addr) {
+    _mm_clflushopt(const_cast<void *>(addr));
+}
 
 [[gnu::always_inline]] void inline pmem_drain() { _mm_sfence(); }
 
