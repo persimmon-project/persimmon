@@ -14,7 +14,7 @@
 
 #include <criu/criu.h>
 
-const char *LOG_FILE_NAME = "redis.log";
+const char *LOG_FILE_NAME = "std.log";
 const char *IMG_DIR_NAME = "initial_chkpt";
 
 #define MUST_SUCCEED(x)                                                                                               \

@@ -14,8 +14,8 @@ static constexpr size_t align_to_cache_line_size(size_t len) {
 
 struct psm_log {
     // The code assumes that `head` and `tail` do not straddle cache lines.
-    alignas(CACHE_LINE_SIZE_B) std::atomic<size_t> head;
-    alignas(CACHE_LINE_SIZE_B) std::atomic<size_t> tail;
+    alignas(CACHE_LINE_SIZE_B) size_t head;
+    alignas(CACHE_LINE_SIZE_B) size_t tail;
 
     /* Circular buffer, where each log entry must be contiguous in memory. */
     alignas(CACHE_LINE_SIZE_B) char buf[PSM_LOG_SIZE_B];
@@ -32,11 +32,32 @@ struct psm {
         chkpt_state *chkpt;
     } state;
 
-    /* Used only by the producer. */
-    size_t local_head;
-    size_t local_tail;
-
     consume_func_t consume_func;
+
+    /* Used to synchronize between foreground and background processes. */
+    std::atomic<size_t> head;
+    std::atomic<size_t> tail;
+
+    /* Used only by the producer. */
+    struct {
+        size_t local_head;
+        size_t local_tail;
+    } producer_state;
+
+    /* Updates and persists head / tail. */
+    void update_head(size_t new_head) {
+        log->head = new_head;
+        pmem_flush(&log->head);
+        pmem_drain();
+        head.store(new_head, std::memory_order_release);
+    }
+
+    void update_tail(size_t new_tail) {
+        log->tail = new_tail;
+        pmem_flush(&log->tail);
+        pmem_drain();
+        tail.store(new_tail, std::memory_order_release);
+    }
 };
 
 #define PSM_LOGGING 0

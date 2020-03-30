@@ -1,7 +1,3 @@
-//
-// Created by Wen Zhang on 1/7/20.
-//
-
 #ifndef PSM_SRC_UNDO_FLUSH_H
 #define PSM_SRC_UNDO_FLUSH_H
 
@@ -12,8 +8,6 @@
 
 #include <emmintrin.h>
 #include <x86intrin.h>
-
-const uintptr_t FLUSH_ALIGN = 64;
 
 // Flushes the cache line that contains addr.
 [[gnu::always_inline]] void inline pmem_flush(const void *addr) { _mm_clwb(const_cast<void *>(addr)); }

@@ -33,9 +33,9 @@ struct alignas(CACHE_LINE_SIZE_B) undo_log_entry {
     // TODO(zhangwen): this is a waste of space.
     char blk[UNDO_BLK_SIZE_B];
     app_pc addr;
-    int commit_tail; /* If > 0, this is a commit record and `commit_tail - 1` is the tail. */
+    uint64_t commit_tail; /* If > 0, this is a commit record and `commit_tail - 1` is the tail. */
 
-    bool is_null() const { return addr == nullptr && commit_tail == 0; }
+    [[nodiscard]] bool is_null() const { return addr == nullptr && commit_tail == 0; }
 };
 static_assert(sizeof(undo_log_entry) == CACHE_LINE_SIZE_B, "undo_log_entry has different size from cache line");
 

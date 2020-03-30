@@ -114,10 +114,9 @@ DR_EXPORT int instrument_init() {
         }
     }
 
-    if (int res = dr_app_setup(); res != 0) {
+    if (int res = dr_app_setup_and_start(); res != 0) {
         return res;
     }
-    dr_app_start();
 
     return 0;
 }
@@ -303,6 +302,7 @@ static bool event_filter_syscall(void *drcontext, int sysnum) {
         return true;
     }
 
+    DR_ASSERT_MSG(sysnum != SYS_brk, "brk syscall not supported");
     dr_fprintf(STDERR, "*** WARNING: Unsupported syscall: %d\n", sysnum);
     return false;
 }
@@ -417,12 +417,20 @@ static bool should_replace(const dr_mem_info_t *info) {
         return false;
     }
 
+    if (info->prot & DR_MEMPROT_SHARED) {
+#if INSTRUMENT_LOGGING
+        dr_fprintf(STDERR, "[should_replace] skipping shared page:\t%p\n", base);
+#endif
+        return false;
+    }
+
     // Hopefully this assertion passes, because I don't know how to deal with "pretend write" pages (which should only
     // cover the executable pages?)
     DR_ASSERT(!(info->prot & DR_MEMPROT_PRETEND_WRITE));
     // TODO(zhangwen): handle write-only pages??!
     DR_ASSERT(info->prot & DR_MEMPROT_READ);
 
+#if 0
     auto psm_log_base = reinterpret_cast<app_pc>(instrument_args.psm_log_base);
     if (base <= psm_log_base && info->size > static_cast<size_t>(psm_log_base - base)) {
         // Skip the PSM log area.
@@ -432,6 +440,7 @@ static bool should_replace(const dr_mem_info_t *info) {
 #endif
         return false;
     }
+#endif
 
     return true;
 }

@@ -19,7 +19,7 @@ constexpr int COMMIT_BATCH = 1;
 // FIXME(zhangwen): pick this number less arbitrarily?
 constexpr int IDLE_SPIN = 10;
 
-template <typename F>[[nodiscard]] static int _bg_consume(psm_t *psm, F f, int tail) {
+template <typename F>[[nodiscard]] static size_t _bg_consume(psm_t *psm, F f, size_t tail) {
     assert_not_instrumented();
     assert(nullptr != psm);
 
@@ -37,18 +37,14 @@ template <typename F>[[nodiscard]] static int _bg_consume(psm_t *psm, F f, int t
     }
 #endif
 
-    struct psm_log *const log = psm->log;
-
     int consumed = 0;
     while ((psm->mode == PSM_MODE_UNDO && !instrument_args.should_commit) ||
            (psm->mode != PSM_MODE_UNDO && consumed < COMMIT_BATCH)) {
-        int head, new_tail;
+        size_t head;
+        int new_tail;
         uint64_t spin = 0;
         do {
-            head = log->head.load(std::memory_order_acquire);
-            // FIXME(zhangwen): this might be slow.
-            pmem_flush(&log->head);
-            pmem_drain();
+            head = psm->head.load(std::memory_order_acquire);
             new_tail = consume(psm, f, head, tail);
             ++spin;
         } while (new_tail == -1 && (spin < IDLE_SPIN || consumed == 0));
@@ -59,7 +55,7 @@ template <typename F>[[nodiscard]] static int _bg_consume(psm_t *psm, F f, int t
 
 #if PSM_LOGGING
         if (psm->mode == PSM_MODE_UNDO) {
-            instrument_log("[bg: _bg_consume] PSM consume\ttail = %d\thead = %d\n", tail, head);
+            instrument_log("[bg: _bg_consume] PSM consume\ttail = %lu\thead = %lu\n", tail, head);
         }
 #endif
         ++consumed;
@@ -85,8 +81,7 @@ template <typename F>[[nodiscard]] static int _bg_consume(psm_t *psm, F f, int t
         __builtin_unreachable();
     }
 
-    log->tail.store(tail, std::memory_order_release); // TODO(zhangwen): is this right?
-    pmem_flush(&log->tail);
+    psm->update_tail(tail);
 
     // FIXME(zhangwen): have some API for implementation strategies.
     if (psm->mode == PSM_MODE_UNDO) {
@@ -103,20 +98,20 @@ template <typename F>[[nodiscard]] static int _bg_consume(psm_t *psm, F f, int t
 template <typename F>[[noreturn]] static void run_consumer(psm_t *psm, F consume_func) {
     assert_not_instrumented();
 
-    int tail = psm->log->tail;
+    size_t tail = psm->tail.load(std::memory_order_acquire);
     while (true) {
         tail = _bg_consume(psm, consume_func, tail);
     }
 }
 
 [[gnu::visibility("default")]] void bg_run(psm_t *psm, bool use_sga) {
-    int res = -1;
+    int res;
     switch (psm->mode) {
     case PSM_MODE_NO_PERSIST:
         res = 0;
         break;
     case PSM_MODE_UNDO:
-        instrument_args.recovered_tail = psm->log->tail.load();
+        instrument_args.recovered_tail = psm->log->tail;
         instrument_args.should_commit = false;
         res = instrument_init();
         if (!instrument_args.recovered) {
@@ -124,9 +119,7 @@ template <typename F>[[noreturn]] static void run_consumer(psm_t *psm, F consume
         }
 
         if (instrument_args.recovered_tail != -1) { // Set by `dr_client_main`.
-            psm->log->tail.store(instrument_args.recovered_tail, std::memory_order_release);
-            pmem_flush(&psm->log->tail);
-            pmem_drain();
+            psm->update_tail(instrument_args.recovered_tail);
         }
         break;
     case PSM_MODE_CHKPT:
