@@ -294,23 +294,34 @@ static void undo_log_exit() {
 // records should have been persisted.
 // Returns the commit tail, or -1 if one doesn't exist. If one exists, it should
 // be used as the PSM log tail.
-[[nodiscard]] static int undo_log_apply(mem_region_manager *mrm) {
+// Also recovers memory regions.
+[[nodiscard]] static int undo_log_recover(mem_region_manager *mrm) {
 #if INSTRUMENT_LOGGING
     dr_fprintf(STDERR, "[bg: apply_undo_log] applying undo log...\n");
 #endif
-    int tail = -1;
-    for (size_t i = undo_log.len; i > 0; --i) {
-        undo_log_entry *entry = &undo_log.log[i - 1];
-        if (entry->commit_tail > 0) {
-            tail = entry->commit_tail - 1; // By definition.
+    if (undo_log.len > 0) {
+        undo_log_entry *last_entry = &undo_log.log[undo_log.len - 1];
+        if (last_entry->commit_tail > 0) { // A commit entry exists.
+            int tail = last_entry->commit_tail - 1; // By definition.
+            mrm->commit_new_region_table();
+            mrm->recover();
+            undo_log_clear();
 #if INSTRUMENT_LOGGING
             dr_fprintf(STDERR, "[bg: apply_undo_log] recovered tail:\t%d\n", tail);
 #endif
-            break;
+            return tail;
         }
+    }
+    mrm->clear_new_region_table();
+    mrm->recover();
+
+    for (size_t i = undo_log.len; i > 0; --i) {
+        undo_log_entry *entry = &undo_log.log[i - 1];
+        DR_ASSERT_MSG(entry->commit_tail == 0, "there should be no commit entry");
 
         app_pc addr = entry->addr;
         DR_ASSERT_MSG(addr != nullptr, "entry->addr == nullptr");
+        // Writes to newly allocated regions should have been filtered out.
         DR_ASSERT_MSG(mrm->does_manage(addr), "undo log entry addr not in a managed region?");
 
         memcpy(entry->addr, &entry->blk, UNDO_BLK_SIZE_B);
@@ -325,7 +336,7 @@ static void undo_log_exit() {
 #if INSTRUMENT_LOGGING
     dr_fprintf(STDERR, "[bg: apply_undo_log] undo log applied\n");
 #endif
-    return tail;
+    return -1;
 }
 
 /* Expects `value` to be a power of 2. */

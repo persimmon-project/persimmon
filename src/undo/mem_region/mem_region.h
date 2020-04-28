@@ -40,19 +40,30 @@ class mem_region_manager {
 
     bool does_manage(app_pc addr) const;
 
+    // Persist the new (modified) region table.  After this function returns, can commit.
+    result persist_new_region_table();
+
+    // Commit and clear the new region table.  No-op if there's no new region table.
+    result commit_new_region_table();
+
+    // Clear the new region table.  No-op if there's no new region table.
+    result clear_new_region_table();
+
   private:
+    static constexpr const char *CURRENT_TABLE_FILE_NAME = "table.dat";
+    static constexpr const char *NEW_TABLE_FILE_NAME = "new_table.dat";
+
     const char *const pmem_path;
     const int pmem_dirfd;
     drvector_t regions; // of regions.
 
     ranges<uintptr_t> rs;
 
-    int persist_region(app_pc base, size_t size) const;
-
-    static constexpr const char *TEMP_FILE_NAME = "tmp_mem";
+    int persist_region(app_pc base, size_t size, char *file_name) const;
 
     // Returns the index of a region that overlaps with the specified region,
     // or -1 if not found.
+    [[nodiscard]]
     int find_overlap(const region &other) const;
 };
 

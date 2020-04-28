@@ -17,7 +17,7 @@ int map_recovered_regions(const char *pmem_path, int pipe_fd) {
     }
 
     while (true) {
-        region r(nullptr, 0);
+        region r(nullptr, 0, 0);
 
         if (int nread = my_read(pipe_fd, &r, sizeof(r)); nread < 0 || static_cast<size_t>(nread) < sizeof(r)) {
             return EINVAL;
@@ -34,7 +34,7 @@ int map_recovered_regions(const char *pmem_path, int pipe_fd) {
         }
 
         char file_name[FILE_NAME_BUF_LEN];
-        make_file_name(file_name, r.base);
+        r.make_file_name(file_name);
         int fd = my_openat(pmem_dirfd, file_name, O_RDWR);
         if (fd < 0) {
             return -fd;

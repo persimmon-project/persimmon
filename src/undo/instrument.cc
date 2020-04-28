@@ -38,6 +38,7 @@ struct {
 // Passed in by psm.  I don't know how to otherwise pass arguments to this tool.
 DR_EXPORT instrument_args_t instrument_args;
 static mem_region_manager *mrm;
+static bool region_table_modified = false;
 
 static module_data_t *psm_module;
 
@@ -129,6 +130,9 @@ DR_EXPORT void instrument_commit(int tail) {
 
 #if !MOCK_OUT_RECORD_WRITE
     assert_not_instrumented();
+    if (region_table_modified) {
+        mrm->persist_new_region_table();
+    }
     ul::undo_log_commit(tail);
 #endif
     drwrap_replace_native_fini(dr_get_current_drcontext());
@@ -138,7 +142,11 @@ DR_EXPORT void instrument_commit(int tail) {
 DR_EXPORT void instrument_cleanup() {
 #if !MOCK_OUT_RECORD_WRITE
     assert_not_instrumented();
+    if (region_table_modified) {
+        mrm->commit_new_region_table();
+    }
     ul::undo_log_post_commit_cleanup();
+    region_table_modified = false;
 #endif
     drwrap_replace_native_fini(dr_get_current_drcontext());
 }
@@ -325,6 +333,7 @@ static bool event_pre_syscall(void *drcontext, int sysnum) {
         if (res == mem_region_manager::result::NOT_MANAGED) { // We don't care about this munmap call.
             return true;
         }
+        region_table_modified = true;
         dr_syscall_set_result(drcontext, static_cast<int>(res));
         return false;
     }
@@ -367,6 +376,7 @@ static void event_post_syscall(void *drcontext, int sysnum) {
             auto res = mrm->replace_region(mmap_ret, size, PROT_READ | PROT_WRITE);
             ul::undo_log_record_fresh_region(mmap_ret, size);
             DR_ASSERT(res == mem_region_manager::result::SUCCESS);
+            region_table_modified = true;
         }
     }
 
@@ -489,6 +499,9 @@ static void init_address_space() {
         bool success = drvector_delete(&to_replace); // This frees all elements.
         DR_ASSERT(success);
     }
+
+    mrm->persist_new_region_table();
+    mrm->commit_new_region_table();
 }
 
 DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[]) {
@@ -496,18 +509,18 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[]) {
     dr_fprintf(STDERR, "WARNING: debug might not work...");
 #endif
     mrm = new (dr_global_alloc(sizeof(mem_region_manager))) mem_region_manager(instrument_args.pmem_path);
+    ul::undo_log_init(instrument_args.pmem_path, instrument_args.recovered);
     if (instrument_args.recovered) {
+        int recovered_tail = ul::undo_log_recover(mrm);
+        if (recovered_tail != -1) { // A commit record was present.
+            instrument_args.recovered_tail = recovered_tail;
+            mrm->commit_new_region_table();
+        } else {
+            mrm->clear_new_region_table();
+        }
         mrm->recover();
     } else {
         init_address_space();
-    }
-
-    ul::undo_log_init(instrument_args.pmem_path, instrument_args.recovered);
-    if (instrument_args.recovered) {
-        int recovered_tail = ul::undo_log_apply(mrm);
-        if (recovered_tail != -1) {
-            instrument_args.recovered_tail = recovered_tail;
-        }
     }
 
     // After applying the undo log, ask the foreground to recover memory pages.
