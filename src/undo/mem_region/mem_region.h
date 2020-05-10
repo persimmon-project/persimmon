@@ -44,12 +44,10 @@ class mem_region_manager {
     result persist_new_region_table();
 
     // Commit and clear the new region table.  No-op if there's no new region table.
-    [[nodiscard]]
-    result commit_new_region_table() const;
+    result commit_new_region_table();
 
     // Clear the new region table.  No-op if there's no new region table.
-    [[nodiscard]]
-    result clear_new_region_table() const;
+    result clear_new_region_table();
 
   private:
     static constexpr const char *CURRENT_TABLE_FILE_NAME = "table.dat";
