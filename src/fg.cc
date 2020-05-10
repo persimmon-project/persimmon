@@ -1,6 +1,7 @@
 #include <atomic>
 #include <cassert>
 #include <cerrno>
+#include <chrono>
 #include <csetjmp>
 #include <cstring>
 #include <new>
@@ -83,6 +84,7 @@ int psm_init(const psm_config_t *config) {
     }
     p_psm->consume_func = config->consume_func;
 
+    std::chrono::time_point<std::chrono::steady_clock> recovery_start; // Set after recovery begins.
     switch (config->mode) {
     case PSM_MODE_NO_PERSIST:
         break;
@@ -94,6 +96,7 @@ int psm_init(const psm_config_t *config) {
             instrument_args.recovered = false;
             // The initial checkpoint will be taken in the child after fork().
         } else {
+            recovery_start = std::chrono::steady_clock::now();
             instrument_args.recovered = true;
             if (pipe(instrument_args.recovery_fds_ftb) != 0 || pipe(instrument_args.recovery_fds_btf) != 0) {
                 return errno;
@@ -160,6 +163,9 @@ int psm_init(const psm_config_t *config) {
 #if PSM_LOGGING
         fprintf(stderr, "[fg: psm_init] Recovery -- replayed %d command(s)\n", num_replayed);
 #endif
+
+        std::chrono::duration<double> elapsed_seconds = std::chrono::steady_clock::now() - recovery_start;
+        fprintf(stderr, "[fg: psm_init] Recovery -- took %g seconds\n", elapsed_seconds.count());
     }
 
     return 0;
