@@ -251,7 +251,7 @@ result mem_region_manager::persist_new_region_table() {
     return result::SUCCESS;
 }
 
-result mem_region_manager::commit_new_region_table() {
+result mem_region_manager::commit_new_region_table() const {
     if (int ret = my_renameat(pmem_dirfd, NEW_TABLE_FILE_NAME, pmem_dirfd, CURRENT_TABLE_FILE_NAME); ret < 0) {
         if (ret == -ENOENT) {
             // There is nothing to commit.
@@ -267,7 +267,7 @@ result mem_region_manager::commit_new_region_table() {
     return result::SUCCESS;
 }
 
-result mem_region_manager::clear_new_region_table() {
+result mem_region_manager::clear_new_region_table() const {
     if (int ret = my_unlinkat(pmem_dirfd, NEW_TABLE_FILE_NAME, /* flags */ 0); ret < 0) {
         if (ret == -ENOENT) {
             // There is nothing to commit.
