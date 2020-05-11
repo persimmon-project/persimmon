@@ -514,11 +514,7 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[]) {
         int recovered_tail = ul::undo_log_recover(mrm);
         if (recovered_tail != -1) { // A commit record was present.
             instrument_args.recovered_tail = recovered_tail;
-            mrm->commit_new_region_table();
-        } else {
-            mrm->clear_new_region_table();
         }
-        mrm->recover();
     } else {
         init_address_space();
     }
