@@ -72,7 +72,6 @@ int psm_init(const psm_config_t *config) {
         return ENOTSUP;
     }
 
-    static_assert(PSM_LOG_SIZE_B >= 64, "PSM log size must be at least one cache line long");
     p_psm->log = new (mem) psm_log;
     p_psm->mode = config->mode;
     p_psm->producer_state = {
@@ -179,25 +178,13 @@ void *psm_reserve(size_t len) {
     assert(len <= PSM_LOG_SIZE_B - 1 && "log entry length exceeds log length");
 
     psm_log *plog = p_psm->log;
-    size_t local_head = p_psm->producer_state.local_head;
+    const size_t local_head = p_psm->producer_state.local_head;
+    bool truncated_tail = false;
     if (local_head + len > PSM_LOG_SIZE_B) { // FIXME(zhangwen): do this properly.
         // The consecutive space after `local_head` is not enough.
         // Discard this space and start from the front.
-        size_t remainder = PSM_LOG_SIZE_B - local_head;
-        size_t local_tail = p_psm->producer_state.local_tail;
-        while ((local_tail + PSM_LOG_SIZE_B - local_head - 1) % PSM_LOG_SIZE_B < remainder) {
-            local_tail = p_psm->tail.load(std::memory_order_acquire);
-        }
-
-        // Write a zero byte at `local_head` to signal that the space between here and
-        // the end of the log is not used.
-        void *p = plog->buf + local_head;
-        memset(p, 0, /* n */ 1);
-        pmem_flush_invalidate(p);
-        pmem_drain();
-        p_psm->producer_state.local_head = 0;
-        p_psm->update_head(0); // Start from the beginning.
-        return psm_reserve(len);
+        truncated_tail = true;
+        len += PSM_LOG_SIZE_B - local_head;
     }
 
     // Spin until there's enough free space starting from `local_head`.
@@ -210,6 +197,14 @@ void *psm_reserve(size_t len) {
 
     void *p = plog->buf + local_head;
     assert(reinterpret_cast<uintptr_t>(p) % CACHE_LINE_SIZE_B == 0 && "BUG: head pointer is not aligned");
+    if (truncated_tail) {
+        // Write a zero byte at `local_head` to signal that the space between here and
+        // the end of the log is not used.
+        memset(p, 0, /* n */ 1);
+        pmem_flush_invalidate(p);
+        p = plog->buf; // Start from the front.
+    }
+
     p_psm->producer_state.local_head = (local_head + len) % PSM_LOG_SIZE_B;
     return p;
 }
