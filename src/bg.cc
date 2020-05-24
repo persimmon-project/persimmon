@@ -10,7 +10,7 @@
 
 #define PRINT_BG_THROUGHPUT 0
 
-#define BATCH_COMMIT 0
+#define BATCH_COMMIT 1
 
 // TODO(zhangwen): Better batching scheme?  Also, these numbers were picked arbitrarily.
 constexpr int COMMIT_BATCH = 1;
