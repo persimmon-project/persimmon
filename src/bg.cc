@@ -10,6 +10,8 @@
 
 #define PRINT_BG_THROUGHPUT 0
 
+#define BATCH_COMMIT 0
+
 // TODO(zhangwen): Better batching scheme?  Also, these numbers were picked arbitrarily.
 constexpr int COMMIT_BATCH = 1;
 
@@ -38,8 +40,12 @@ template <typename F>[[nodiscard]] static size_t _bg_consume(psm_t *psm, F f, si
 #endif
 
     int consumed = 0;
+#if BATCH_COMMIT
     while ((psm->mode == PSM_MODE_UNDO && !instrument_args.should_commit) ||
-           (psm->mode != PSM_MODE_UNDO && consumed < COMMIT_BATCH)) {
+        (psm->mode != PSM_MODE_UNDO && consumed < COMMIT_BATCH)) {
+#else
+    while (consumed < 1) {
+#endif
         size_t head;
         int new_tail;
         uint64_t spin = 0;

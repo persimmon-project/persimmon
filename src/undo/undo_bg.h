@@ -11,6 +11,16 @@
 
 #define INSTRUMENT_LOGGING 0
 
+#define PRINT_TRACE 0
+#define PRINT_GENERATED_CODE 0
+#define MOCK_OUT_RECORD_WRITE 0
+
+#define OPTIMIZE_SKIP_STACK 1
+#define OPTIMIZE_DEDUPLICATE 1
+#define OPTIMIZE_SKIP_RECORD 1
+
+static_assert(!OPTIMIZE_SKIP_RECORD || OPTIMIZE_DEDUPLICATE, "OPTIMIZE_SKIP_RECORD requires OPTIMIZE_DEDUPLICATE");
+
 static inline void assert_not_instrumented() {
 #if ENABLE_ASSERT_NOT_INSTRUMENTED
     unsigned int eax, ebx, ecx, edx;

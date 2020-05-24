@@ -8,6 +8,8 @@
 
 #include "undo/flush.h"
 
+#define PSM_LOGGING 0
+
 static constexpr size_t align_to_cache_line_size(size_t len) {
     return ((size_t)len + (CACHE_LINE_SIZE_B - 1)) & ~(CACHE_LINE_SIZE_B - 1);
 }
@@ -59,8 +61,6 @@ struct psm {
         tail.store(new_tail, std::memory_order_release);
     }
 };
-
-#define PSM_LOGGING 0
 
 // Returns new tail (if an entry is consumed), or -1 if there's no entry to consume.
 template <typename F>

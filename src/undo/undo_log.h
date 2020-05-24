@@ -45,7 +45,9 @@ static struct {
 
     // This is a hash table "index" for addresses logged in `undo_log`,
     // array of LOGGED_ADDR_HASH_SIZE (void *).
+#if OPTIMIZE_DEDUPLICATE
     void **logged_addrs_hash;
+#endif
 
     ranges<uintptr_t> *fresh_regions;
 } undo_log;
@@ -85,6 +87,7 @@ static void *map_undo_log(const char *pmem_path) {
 // If the address already exists, returns false.
 // Otherwise, inserts the address if there's space, and returns true.
 // Returns false if the address already exists, true otherwise.
+#if OPTIMIZE_DEDUPLICATE
 static bool undo_log_insert_logged_addr(void *addr) {
     auto addr_n = reinterpret_cast<uintptr_t>(addr);
 #if !OPTIMIZED
@@ -117,11 +120,14 @@ static bool undo_log_insert_logged_addr(void *addr) {
 #endif
     return true;
 }
+#endif
 
 static void undo_log_clear() {
     pmem_memset(reinterpret_cast<char *>(undo_log.log), 0, undo_log.len * sizeof(undo_log_entry));
     undo_log.len = 0;
+#if OPTIMIZE_DEDUPLICATE
     memset(undo_log.logged_addrs_hash, 0, sizeof(void *) * LOGGED_ADDR_HASH_SIZE);
+#endif
     undo_log.fresh_regions->clear();
     pmem_drain();
 }
@@ -132,20 +138,26 @@ static void undo_log_init(const char *pmem_path, bool recovered) {
     undo_log.log = static_cast<undo_log_entry *>(log);
 
     /* Am I supposed to call placement new for this array?  I give up... */
+#if OPTIMIZE_DEDUPLICATE
     undo_log.logged_addrs_hash = (void **)dr_global_alloc(sizeof(*undo_log.logged_addrs_hash) * LOGGED_ADDR_HASH_SIZE);
     /* We should have configured DynamoRIO to allocate in the lowest 4GB of the
      * address space, making it easier to access this array from vmcode. */
     DR_ASSERT_MSG(reinterpret_cast<uintptr_t>(undo_log.logged_addrs_hash) < 0xFFFFFFFF,
                   "logged_addrs_hash address exceeds 32 bits");
+#endif
 
     void *mem = dr_global_alloc(sizeof(*undo_log.fresh_regions));
     undo_log.fresh_regions = new (mem) ranges<uintptr_t>();
 
     if (recovered) { // Recover other fields.
+#if OPTIMIZE_DEDUPLICATE
         memset(undo_log.logged_addrs_hash, 0, sizeof(void *) * LOGGED_ADDR_HASH_SIZE);
+#endif
         int i = 0;
         for (auto entry = undo_log.log; !entry->is_null(); ++entry, ++i) {
+#if OPTIMIZE_DEDUPLICATE
             undo_log_insert_logged_addr(entry->addr);
+#endif
             if (entry->commit_tail > 0) {
                 DR_ASSERT(entry->addr == nullptr);
             }
@@ -184,9 +196,11 @@ static void undo_log_init(const char *pmem_path, bool recovered) {
 #endif
 
         auto p = reinterpret_cast<app_pc>(pn);
+#if OPTIMIZE_DEDUPLICATE
         if (!undo_log_insert_logged_addr(p)) {
             continue;
         }
+#endif
 
         auto *entry = static_cast<undo_log_entry *>(
             // The hint helps the compiler pick instructions that assume

@@ -110,12 +110,18 @@ int mem_region_manager::persist_region(app_pc base, size_t size, char *file_name
         goto err;
     }
 
-    if (int nb = my_write(fd, base, size); nb < 0) {
-        print_error("persist_region -- write", -nb);
-        goto err;
-    } else if (static_cast<size_t>(nb) != size) {
-        // I'm too lazy to deal with the case where 0 <= nb < size.
-        DR_ASSERT_MSG(false, "persist_region: write is not complete");
+    {
+        app_pc write_from = base;
+        size_t to_write = size;
+        while (to_write > 0) {
+            int nb = my_write(fd, write_from, to_write);
+            if (nb <= 0) {
+                print_error("persist_region -- write", -nb);
+                goto err;
+            }
+            write_from += nb;
+            to_write -= nb;
+        }
     }
 
     if (int ret = my_fsync(fd) < 0; ret < 0) {

@@ -18,11 +18,6 @@
 
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
-#define PRINT_TRACE 0
-#define OPTIMIZE_SKIP_RECORD 1
-#define PRINT_GENERATED_CODE 0
-#define MOCK_OUT_RECORD_WRITE 0
-
 #include "undo_log.h"
 
 #include "my_libc/my_libc.h"
@@ -72,11 +67,14 @@ record_write(uintptr_t addr, uint size, uintptr_t rsp)
     dr_fprintf(STDERR, "%p,%u\n", addr, size);
 #endif
 
-    if (unlikely(addr >= rsp)) {
+#if OPTIMIZE_SKIP_STACK
+    if (unlikely(addr >= rsp - 128)) {
         // This happens infrequently---most writes to the stack should have been
         // filtered out because the destination address is an offset from %rsp.
+        // FIXME(zhangwen): the stack can extend below rsp...
         return;
     }
+#endif
 #ifdef DEBUG
     DR_ASSERT(!mrm->does_manage(addr));
 #endif
@@ -212,7 +210,9 @@ static void insert_instrumentation(void *drcontext, instrlist_t *bb, instr_t *in
 }
 #else
 static void insert_instrumentation(void *drcontext, instrlist_t *bb, instr_t *instr, opnd_t opnd) {
+#if INSTRUMENT_LOGGING
     app_pc pc = instr_get_app_pc(instr);
+#endif
 
     reg_id_t reg_dst, reg_tmp = DR_REG_NULL;
     if (drreg_reserve_register(drcontext, bb, instr, nullptr, &reg_dst) != DRREG_SUCCESS) {
@@ -285,11 +285,13 @@ static dr_emit_flags_t event_app_instruction(void *drcontext, void *tag, instrli
     for (int i = 0; i < instr_num_dsts(instr); i++) {
         opnd_t opnd = instr_get_dst(instr, i);
         if (opnd_is_memory_reference(opnd)) {
+#if OPTIMIZE_SKIP_STACK
             if (opnd_is_base_disp(opnd) && opnd_get_base(opnd) == DR_REG_XSP) {
                 // Assume that this write destination is on the stack.  Ignore!
                 // TODO(zhangwen): is this assumption reasonable?
                 continue;
             }
+#endif
             insert_instrumentation(drcontext, bb, instr, opnd);
 #if PRINT_GENERATED_CODE
             inserted = true;
