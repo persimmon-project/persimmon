@@ -10,10 +10,12 @@
 
 #define PRINT_BG_THROUGHPUT 0
 
-#define BATCH_COMMIT 1
+#define BATCH_COMMIT 0
+#define BATCH_COMMIT_FIXED_BATCH 0
+static_assert(!BATCH_COMMIT_FIXED_BATCH || BATCH_COMMIT);
 
 // TODO(zhangwen): Better batching scheme?  Also, these numbers were picked arbitrarily.
-constexpr int COMMIT_BATCH = 1;
+constexpr int COMMIT_BATCH = 8;
 
 // Commit after this many idle spin loops.
 // This prevents "deadlocks" where the log has insufficient space left but the
@@ -41,8 +43,12 @@ template <typename F>[[nodiscard]] static size_t _bg_consume(psm_t *psm, F f, si
 
     int consumed = 0;
 #if BATCH_COMMIT
+#if BATCH_COMMIT_FIXED_BATCH
+    while (consumed < COMMIT_BATCH) {
+#else
     while ((psm->mode == PSM_MODE_UNDO && !instrument_args.should_commit) ||
         (psm->mode != PSM_MODE_UNDO && consumed < COMMIT_BATCH)) {
+#endif
 #else
     while (consumed < 1) {
 #endif
