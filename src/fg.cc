@@ -165,7 +165,11 @@ int psm_init(const psm_config_t *config) {
 #endif
 
         std::chrono::duration<double> elapsed_seconds = std::chrono::steady_clock::now() - recovery_start;
-        fprintf(stderr, "[fg: psm_init] Recovery -- took %g seconds\n", elapsed_seconds.count());
+        auto timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()
+                ).count();
+        fprintf(stderr, "[fg: psm_init] [%ld] Recovery -- took %g seconds\n", timestamp_ms,
+                elapsed_seconds.count());
     }
 
     return 0;
