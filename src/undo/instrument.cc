@@ -169,6 +169,13 @@ static void insert_instrumentation(void *drcontext, instrlist_t *bb, instr_t *in
     instr_t *slow_path_label = INSTR_CREATE_label(drcontext);
     instr_t *skip_label = INSTR_CREATE_label(drcontext);
 
+    /* FIXME(zhangwen): I remember there was a bug here that prevented correct restoration of a
+     * reserved register.  I think the bug only manifested itself on a basic block that used _lots_
+     * of registers (an unused register doesn't need to be restored), e.g., on a basic block that
+     * represents an unrolled loop body.  I haven't looked into it too much, but a fix would probably
+     * involve adding instrumentation in separate passes in DynamoRIO.  This bug doesn't seem to affect
+     * the real-life applications evaluated in the paper (Redis, TAPIR). */
+
     /* `reg_dst` always holds the destination address of the write; do not
      * clobber, as the clean call uses it as an argument. */
     reg_id_t reg_dst, reg_t1;
